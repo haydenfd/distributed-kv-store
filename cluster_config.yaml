@@ -1,0 +1,14 @@
+cluster:
+  name: kv-cluster-local
+
+  seeds:
+    - node_id: node-1
+      address: localhost:50051
+    - node_id: node-2
+      address: localhost:50052
+    - node_id: node-3
+      address: localhost:50053
+    - node_id: node-4
+      address: localhost:50054
+    - node_id: node-5
+      address: localhost:50055
