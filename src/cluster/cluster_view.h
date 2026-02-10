@@ -9,7 +9,7 @@
 
 #include <grpcpp/grpcpp.h>
 
-#include "kv/ring/consistent_hash_ring.h"
+#include "ring/consistent_hash_ring.h"
 
 namespace kv::cluster {
 

@@ -1,15 +1,13 @@
 #pragma once
-#include <memory>
-
 #include "kv.pb.h"
 #include "kv.grpc.pb.h"
-#include "kv/node/node.h"
+#include "node/node.h"
 
 namespace kv {
 
-class KVService final : public kvstore::KeyValue::Service {
+class NodeRpcService final : public kvstore::KeyValue::Service {
 public:
-    explicit KVService(kv::node::Node& node);
+    explicit NodeRpcService(kv::node::Node& node);
 
     grpc::Status Get(
         grpc::ServerContext* context,
@@ -22,7 +20,7 @@ public:
         kvstore::PutResponse* response) override;
 
 private:
-    kv::node::Node& node_;
+    kv::node::Node& node_ref_;
 };
 
-} // namespace kv
+} 

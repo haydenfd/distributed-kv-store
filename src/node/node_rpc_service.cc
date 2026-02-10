@@ -1,6 +1,6 @@
-#include "kv/node/node_rpc_service.h"
+#include "node/node_rpc_service.h"
 
-#include "kv/utils/logging.h"
+#include "utils/logging.h"
 namespace kv {
 namespace {
 // Populate GetResponse with entry data or mark as not found.

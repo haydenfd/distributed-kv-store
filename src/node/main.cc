@@ -5,10 +5,11 @@
 #include <grpcpp/grpcpp.h>
 #include <yaml-cpp/yaml.h>
 
-#include "kv/node/node.h"
-#include "kv/node/kv_service.h"
-#include "kv/node/node_config.h"
-#include "kv/cluster/cluster_view.h"
+#include "node/node.h"
+#include "node/node_rpc_service.h"
+#include "node/node_config.h"
+#include "cluster/cluster_view.h"
+#include "utils/logging.h"
 
 /*
 CLI:
@@ -21,6 +22,7 @@ int main(int argc, char** argv) {
     std::string node_id;
     std::string config_path;
     int port = -1;
+    std::string log_level_arg;
 
     // --------------------
     // Parse CLI args
@@ -33,12 +35,20 @@ int main(int argc, char** argv) {
             port = std::stoi(argv[++i]);
         } else if (arg == "--config" && i + 1 < argc) {
             config_path = argv[++i];
+        } else if (arg == "--log-level" && i + 1 < argc) {
+            log_level_arg = argv[++i];
         }
     }
 
     if (node_id.empty() || port <= 0 || config_path.empty()) {
-        std::cerr << "Usage: kv_node --id <node-id> --port <port> --config <cluster.yaml>\n";
+        std::cerr << "Usage: kv_node --id <node-id> --port <port> --config <cluster.yaml> "
+                     "[--log-level <none|info|debug>]\n";
         return 1;
+    }
+
+    kv::log::init_from_env();
+    if (!log_level_arg.empty()) {
+        kv::log::set_level(kv::log::parse_level(log_level_arg));
     }
 
     // --------------------
@@ -48,36 +58,66 @@ int main(int argc, char** argv) {
 
     kv::cluster::ClusterView cluster;
 
-    for (const auto& seed : config["cluster"]["seeds"]) {
-        std::string seed_id = seed["node_id"].as<std::string>(); 
-        std::string address = seed["address"].as<std::string>();
-        cluster.add_node(seed_id, address);
+    YAML::Node cluster_nodes = config["cluster"]["seeds"];
+    if (!cluster_nodes || !cluster_nodes.IsSequence()) {
+        cluster_nodes = config["cluster"]["nodes"];
     }
 
-    std::cout << "Cluster nodes:\n";
-    for (const auto& id : cluster.node_ids()) {
-        std::cout << "  - " << id << "\n";
-    }    
+    // Parse replication settings from cluster config
+    size_t replication_factor = 3;  // default
+    int write_quorum = 1;           // default
 
-    std::vector<std::string> test_keys = {
-        "alpha", "beta", "gamma", "delta", "epsilon"
-    };
-
-    std::cout << "=== Ownership test ===\n";
-    for (const auto& key : test_keys) {
-        std::cout << "key=" << key
-                << " owner=" << cluster.owner_for_key(key)
-                << "\n";
+    if (config["cluster"]["replication_factor"]) {
+        replication_factor = config["cluster"]["replication_factor"].as<size_t>();
     }
-    std::cout << "======================\n";    
+    if (config["cluster"]["write_quorum"]) {
+        write_quorum = config["cluster"]["write_quorum"].as<int>();
+    }
+
+    LOG_INFO("Cluster config: RF=" << replication_factor
+             << " W=" << write_quorum
+             << " (reads use LWW)");
+
+    std::string self_address_from_config;
+    if (cluster_nodes && cluster_nodes.IsSequence()) {
+        for (const auto& seed : cluster_nodes) {
+            std::string seed_id = seed["node_id"].as<std::string>();
+            std::string address = seed["address"].as<std::string>();
+            cluster.add_node_to_cluster(seed_id, address);
+            if (seed_id == node_id) {
+                self_address_from_config = address;
+            }
+        }
+    }
+
     // --------------------
     // Build node + service
     // --------------------
     std::string bind_addr = "0.0.0.0";
     std::string listen_addr = bind_addr + ":" + std::to_string(port);
 
-    kv::node::Node node(node_id, cluster);
-    kv::KVService service(node);
+    if (!cluster.get_node_address(node_id).has_value()) {
+        std::string self_address = self_address_from_config.empty()
+            ? ("localhost:" + std::to_string(port))
+            : self_address_from_config;
+        cluster.add_node_to_cluster(node_id, self_address);
+    }
+
+    // Create node config
+    kv::NodeConfig node_config;
+    node_config.node_id = node_id;
+    node_config.bind_addr = bind_addr;
+    node_config.port = port;
+    node_config.replication_factor = replication_factor;
+    node_config.write_quorum = write_quorum;
+
+    if (auto err = node_config.validate()) {
+        std::cerr << "Invalid config: " << *err << "\n";
+        return 1;
+    }
+
+    kv::node::Node node(node_config, cluster);
+    kv::NodeRpcService service(node);
 
     grpc::ServerBuilder builder;
     builder.AddListeningPort(listen_addr, grpc::InsecureServerCredentials());
@@ -85,9 +125,7 @@ int main(int argc, char** argv) {
 
     std::unique_ptr<grpc::Server> server(builder.BuildAndStart());
 
-    std::cout << "Node " << node_id
-              << " listening on " << listen_addr
-              << std::endl;
+    LOG_INFO("Node " << node_id << " listening on " << listen_addr);
 
     server->Wait();
     return 0;

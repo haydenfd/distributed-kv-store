@@ -2,8 +2,10 @@ target_sources(kv_core
     PRIVATE
         hash/murmur3.cc
         ring/consistent_hash_ring.cc
-        node/kv_service.cc
+        utils/logging.cc
+        node/node_rpc_service.cc
         node/node.cc
+        cluster/cluster_view.cc
 )
 
 target_include_directories(kv_core
@@ -20,18 +22,18 @@ target_link_libraries(kv_node
         kv_core
 )
 
-add_executable(kv_client
-    client/kv_client.cc
+add_executable(kv_cli
+    client/kv_cli.cc
 )
 
-target_link_libraries(kv_client
+target_link_libraries(kv_cli
     PRIVATE
         kv_core
         gRPC::grpc++
         protobuf::libprotobuf
 )
 
-target_include_directories(kv_client
+target_include_directories(kv_cli
     PRIVATE
         ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
