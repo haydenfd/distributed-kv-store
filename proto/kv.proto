@@ -2,6 +2,11 @@ syntax = "proto3";
 
 package kvstore;
 
+message Version {
+  uint64 write_created_at_us = 1; // write creation time (microseconds since epoch)
+  string writer_id = 2; // who wrote the current version?
+}
+
 service KeyValue {
   rpc Get(GetRequest) returns (GetResponse);
   rpc Put(PutRequest) returns (PutResponse);
@@ -9,16 +14,21 @@ service KeyValue {
 
 message GetRequest {
   string key = 1;
+  bool is_internal = 2; // true for inter-replica requests
+
 }
 
 message GetResponse {
   bool found = 1;
   string value = 2;
+  Version version = 3;
 }
 
 message PutRequest {
   string key = 1;
   string value = 2;
+  bool is_internal = 3; // true for inter-replica requests
+  Version version = 4;
 }
 
 message PutResponse {
