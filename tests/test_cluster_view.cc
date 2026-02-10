@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <unordered_set>
 
-#include "kv/cluster/cluster_view.h"
+#include "cluster/cluster_view.h"
 
 using kv::cluster::ClusterView;
 

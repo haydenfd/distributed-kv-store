@@ -2,10 +2,10 @@
 
 #include <grpcpp/server_context.h>
 
-#include "kv/cluster/cluster_view.h"
-#include "kv/node/node.h"
-#include "kv/node/node_config.h"
-#include "kv/node/node_rpc_service.h"
+#include "cluster/cluster_view.h"
+#include "node/node.h"
+#include "node/node_config.h"
+#include "node/node_rpc_service.h"
 
 using kv::cluster::ClusterView;
 using kv::node::Node;

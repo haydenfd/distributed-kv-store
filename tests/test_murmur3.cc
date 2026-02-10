@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "kv/hash/murmur3.h"
+#include "hash/murmur3.h"
 
 #include <unordered_set>
 #include <string>

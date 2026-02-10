@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "kv/ring/consistent_hash_ring.h"
+#include "ring/consistent_hash_ring.h"
 
 using kv::ring::ConsistentHashRing;
 
@@ -35,14 +35,14 @@ TEST(ConsistentHashRing, MinimalDisruptionOnAdd) {
     ring.add_node("nodeB");
 
     std::vector<std::string> before;
-    for (int i = 0; i < 1000; ++i) {
+    for (size_t i = 0; i < 1000; ++i) {
         before.push_back(ring.get_owner_node("key_" + std::to_string(i)));
     }
 
     ring.add_node("nodeC");
 
     int moved = 0;
-    for (int i = 0; i < 1000; ++i) {
+    for (size_t i = 0; i < 1000; ++i) {
         if (before[i] != ring.get_owner_node("key_" + std::to_string(i))) {
             moved++;
         }
