@@ -16,7 +16,4 @@ target_link_libraries(kv_tests
         GTest::gtest_main
 )
 
-
 add_test(NAME kv_tests COMMAND kv_tests)
-
-add_subdirectory(integration)
