@@ -125,32 +125,42 @@ TEST(ClusterIntegration, ForwardingReplicatesValueToAllNodes) {
     }
 }
 
-// Inject a stale version directly into n3's store. The coordinator GET must
-// return the newest value and repair n3 synchronously before returning.
+// Simulate a stale replica:
+//   1. Write "v1" to all 3 nodes.
+//   2. Remove n3 from the cluster view so the next write doesn't reach it.
+//   3. Write "v2" — only n1 and n2 receive it; n3 keeps "v1".
+//   4. Re-add n3 to the view so the coordinator queries it again.
+//   5. GET must return "v2" (LWW winner) and repair n3 synchronously.
 TEST(ClusterIntegration, ReadRepairFixesStalReplica) {
     ClusterFixture f(3, 1);
     f.start(3);
     f.node(0).set_early_write_return(false);
 
-    ASSERT_TRUE(f.node(0).put("foo", "fresh"));
+    ASSERT_TRUE(f.node(0).put("foo", "v1"));  // all 3 nodes get v1
 
-    // Inject a stale entry directly — bypasses LWW on purpose.
-    f.node(2).apply_put_local("foo", "stale", Version{1, "old"});
+    // Exclude n3 from routing so the next write doesn't reach it.
+    f.view.remove_node_from_cluster("n3");
+    ASSERT_TRUE(f.node(0).put("foo", "v2"));  // only n1 and n2 get v2
+
+    // Restore n3 — it still holds the stale "v1".
+    std::string n3_addr = "localhost:" + std::to_string(f.instances[2]->port);
+    f.view.add_node_to_cluster("n3", n3_addr);
+
     {
-        auto check = f.node(2).local_get("foo");
-        ASSERT_TRUE(check.has_value());
-        ASSERT_EQ(check->value, "stale");  // confirm injection worked
+        auto stale = f.node(2).local_get("foo");
+        ASSERT_TRUE(stale.has_value());
+        ASSERT_EQ(stale->value, "v1") << "n3 should still be stale before GET";
     }
 
-    // Coordinator GET picks the newest across all replicas and repairs n3.
+    // Coordinator GET queries all 3, picks v2 (newest), repairs n3.
     auto result = f.node(0).get("foo");
     ASSERT_TRUE(result.has_value());
-    EXPECT_EQ(result->value, "fresh");
+    EXPECT_EQ(result->value, "v2");
 
-    // Read repair is synchronous inside get() — n3 must be patched by now.
+    // Read repair is synchronous — n3 must be patched before get() returned.
     auto repaired = f.node(2).local_get("foo");
     ASSERT_TRUE(repaired.has_value());
-    EXPECT_EQ(repaired->value, "fresh");
+    EXPECT_EQ(repaired->value, "v2");
     EXPECT_GT(f.node(0).metrics().read_repairs, 0u);
 }
 
