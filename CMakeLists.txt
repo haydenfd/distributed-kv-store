@@ -5,9 +5,46 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Dependencies
+# Place all executables in a single bin directory for consistent paths.
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+# Enable comprehensive warnings
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    add_compile_options(
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wshadow
+        -Wconversion
+        -Wsign-conversion
+        -Wunused
+        -Wno-unused-parameter
+    )
+endif()
+
+# ThreadSanitizer — must instrument all TUs in the binary, so apply globally.
+# Usage: cmake -DENABLE_TSAN=ON ..
+# Incompatible with ASan/UBSan; use a separate build directory.
+option(ENABLE_TSAN "Build with ThreadSanitizer instrumentation" OFF)
+if(ENABLE_TSAN)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+        message(FATAL_ERROR "ENABLE_TSAN requires GCC or Clang")
+    endif()
+    add_compile_options(-fsanitize=thread -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=thread)
+endif()
+
+if(MSVC)
+    add_compile_options(/W4)
+endif()
+
 find_package(gRPC CONFIG REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
+find_package(yaml-cpp REQUIRED)
 
 # -----------------------
 # Protobuf / gRPC setup
@@ -32,13 +69,9 @@ add_custom_command(
         --plugin=protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>
         "${KV_PROTO}"
     DEPENDS "${KV_PROTO}"
-    COMMENT "Generating protobuf and gRPC sources"
     VERBATIM
 )
 
-# -----------------------
-# Core library
-# -----------------------
 add_library(kv_core STATIC
     "${GENERATED_PROTOBUF_PATH}/kv.pb.cc"
     "${GENERATED_PROTOBUF_PATH}/kv.grpc.pb.cc"
@@ -46,7 +79,7 @@ add_library(kv_core STATIC
 
 target_include_directories(kv_core
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${GENERATED_PROTOBUF_PATH}
 )
 
@@ -54,12 +87,9 @@ target_link_libraries(kv_core
     PUBLIC
         gRPC::grpc++
         protobuf::libprotobuf
+        yaml-cpp::yaml-cpp
 )
 
-enable_testing()
-# -----------------------
-# Subdirectories
-# -----------------------
 add_subdirectory(src)
+add_subdirectory(benchmarks)
 add_subdirectory(tests)
-# add_subdirectory(benchmarks)

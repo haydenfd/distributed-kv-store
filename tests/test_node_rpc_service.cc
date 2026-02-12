@@ -148,6 +148,70 @@ TEST(NodeRpcService, InternalPutRespectsLwwVersioning) {
     EXPECT_EQ(get_resp.version().write_created_at_us(), 200u);
 }
 
+// An internal GET must return the local value only — no coordinator logic,
+// no read repair. read_repair_count must stay zero.
+TEST(NodeRpcService, InternalGetDoesNotTriggerReadRepair) {
+    ServiceFixture fixture;
+
+    kvstore::PutRequest put;
+    kvstore::PutResponse put_resp;
+    grpc::ServerContext put_ctx;
+    put.set_key("k5");
+    put.set_value("v5");
+    put.set_is_internal(true);
+    put.mutable_version()->set_write_created_at_us(100);
+    put.mutable_version()->set_writer_id("writerA");
+    EXPECT_TRUE(fixture.service.Put(&put_ctx, &put, &put_resp).ok());
+
+    kvstore::GetRequest get;
+    kvstore::GetResponse get_resp;
+    grpc::ServerContext get_ctx;
+    get.set_key("k5");
+    get.set_is_internal(true);
+    EXPECT_TRUE(fixture.service.Get(&get_ctx, &get, &get_resp).ok());
+    EXPECT_TRUE(get_resp.found());
+
+    EXPECT_EQ(fixture.node.metrics().read_repairs, 0u);
+}
+
+// An external GET must include the version fields in the response.
+TEST(NodeRpcService, ExternalGetIncludesVersionInResponse) {
+    ServiceFixture fixture;
+
+    kvstore::PutRequest put;
+    kvstore::PutResponse put_resp;
+    grpc::ServerContext put_ctx;
+    put.set_key("k6");
+    put.set_value("v6");
+    put.set_is_internal(false);
+    EXPECT_TRUE(fixture.service.Put(&put_ctx, &put, &put_resp).ok());
+
+    kvstore::GetRequest get;
+    kvstore::GetResponse get_resp;
+    grpc::ServerContext get_ctx;
+    get.set_key("k6");
+    get.set_is_internal(false);
+    EXPECT_TRUE(fixture.service.Get(&get_ctx, &get, &get_resp).ok());
+    ASSERT_TRUE(get_resp.found());
+    EXPECT_GT(get_resp.version().write_created_at_us(), 0u);
+    EXPECT_FALSE(get_resp.version().writer_id().empty());
+}
+
+// An external GET on a missing key must return found=false via the coordinator path.
+TEST(NodeRpcService, ExternalGetMissingKeyReturnsNotFound) {
+    ServiceFixture fixture;
+
+    kvstore::GetRequest get;
+    kvstore::GetResponse get_resp;
+    grpc::ServerContext get_ctx;
+    get.set_key("does_not_exist");
+    get.set_is_internal(false);
+
+    auto status = fixture.service.Get(&get_ctx, &get, &get_resp);
+    EXPECT_TRUE(status.ok());
+    EXPECT_FALSE(get_resp.found());
+}
+
 TEST(NodeRpcService, InternalPutTieBreaksByWriterId) {
     ServiceFixture fixture;
 
